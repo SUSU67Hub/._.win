@@ -1,0 +1,256 @@
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+
+local LocalPlayer = Players.LocalPlayer
+while not LocalPlayer do task.wait(0.1) LocalPlayer = Players.LocalPlayer end
+local TopParent = LocalPlayer:WaitForChild("PlayerGui", 5) or workspace.CurrentCamera
+
+-- 強力清理舊殘留
+for _, child in ipairs(TopParent:GetChildren()) do
+    if child:IsA("ScreenGui") and (child.Name:match("CrossLay") or child.Name:match("PanelLay")) then
+        child:Destroy()
+    end
+end
+task.wait(0.1)
+
+-- 【設定檔本地持久化引擎】
+local Cfg = { offsetX = 0, offsetY = -24, crossEnabled = true, autoExec = false }
+local FileName = "crosshair_cfg.txt"
+
+local function saveConfig()
+    if writefile then
+        local autoStr = Cfg.autoExec and "true" or "false"
+        local crossStr = Cfg.crossEnabled and "true" or "false"
+        local dataStr = string.format("%d,%d,%s,%s", Cfg.offsetX, Cfg.offsetY, crossStr, autoStr)
+        pcall(function() writefile(FileName, dataStr) end)
+    end
+end
+
+local function loadConfig()
+    if readfile then
+        local success, content = pcall(function() return readfile(FileName) end)
+        if success and content then
+            local parts = string.split(content, ",")
+            if parts and #parts >= 4 then
+                Cfg.offsetX = tonumber(parts[1]) or 0
+                Cfg.offsetY = tonumber(parts[2]) or -24
+                Cfg.crossEnabled = (parts[3] == "true")
+                Cfg.autoExec = (parts[4] == "true")
+                print("[+] CROSSHAIR.win 已完美自動加載歷史對齊數據！")
+            end
+        end
+    end
+end
+
+-- 先行嘗試讀取歷史記憶
+loadConfig()
+
+-- 1. 建立準星圖層
+local CrosshairGui = Instance.new("ScreenGui")
+CrosshairGui.Name = "CrossLay"
+CrosshairGui.ResetOnSpawn = false
+CrosshairGui.Parent = TopParent
+
+local CrossBase = Instance.new("Frame")
+CrossBase.Size = UDim2.new(0, 40, 0, 60)
+local function updateCrosshairPosition()
+    CrossBase.Position = UDim2.new(0.5, -20 + Cfg.offsetX, 0.5, -18 + Cfg.offsetY)
+end
+CrossBase.BackgroundTransparency = 1
+CrossBase.Visible = Cfg.crossEnabled
+CrossBase.Parent = CrosshairGui
+
+local RotPart = Instance.new("Frame")
+RotPart.Size = UDim2.new(0, 36, 0, 36)
+RotPart.Position = UDim2.new(0.5, -18, 0, 0)
+RotPart.BackgroundTransparency = 1
+RotPart.Parent = CrossBase
+
+-- 拼出中空十字
+local lines = {}
+local layouts = {
+    {0,3,0,11, 0.5,-1.5,0.5,-18}, -- 頂
+    {0,3,0,11, 0.5,-1.5,0.5,7},   -- 底
+    {0,11,0,3, 0.5,-18,0.5,-1.5}, -- 左
+    {0,11,0,3, 0.5,7,0.5,-1.5}    -- 右
+}
+for _, v in ipairs(layouts) do
+    local l = Instance.new("Frame")
+    l.Size = UDim2.new(v[1], v[2], v[3], v[4])
+    l.Position = UDim2.new(v[5], v[6], v[7], v[8])
+    l.BorderSizePixel = 0
+    l.Parent = RotPart
+    table.insert(lines, l)
+end
+
+local UnderText = Instance.new("TextLabel")
+UnderText.Size = UDim2.new(0, 100, 0, 20)
+UnderText.Position = UDim2.new(0.5, -50, 0, 38)
+UnderText.BackgroundTransparency = 1
+UnderText.Text = "._.win"
+UnderText.Font = Enum.Font.SourceSansBold
+UnderText.TextSize = 14
+UnderText.Parent = CrossBase
+
+-- 2. 建立控制面板圖層
+local PanelGui = Instance.new("ScreenGui")
+PanelGui.Name = "PanelLay"
+PanelGui.DisplayOrder = 10
+PanelGui.Parent = TopParent
+
+local MainFrame = Instance.new("Frame")
+MainFrame.Size = UDim2.new(0, 340, 0, 200)
+MainFrame.Position = UDim2.new(0.05, 0, 0.35, 0)
+MainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
+MainFrame.BorderColor3 = Color3.fromRGB(155, 38, 182)
+MainFrame.Active = true
+MainFrame.Parent = PanelGui
+
+local TitleBar = Instance.new("Frame")
+TitleBar.Size = UDim2.new(1, 0, 0, 30)
+TitleBar.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
+TitleBar.BorderSizePixel = 0
+TitleBar.Parent = MainFrame
+
+local TitleText = Instance.new("TextLabel")
+TitleText.Size = UDim2.new(1, -10, 1, 0)
+TitleText.Position = UDim2.new(0, 10, 0, 0)
+TitleText.Text = "CROSSHAIR.win 記憶微調控制台"
+TitleText.TextColor3 = Color3.fromRGB(255, 255, 255)
+TitleText.Font = Enum.Font.SourceSansBold
+TitleText.TextXAlignment = Enum.TextXAlignment.Left
+TitleText.BackgroundTransparency = 1
+TitleText.Parent = TitleBar
+
+-- 按鈕工廠函式
+local function createMenuButton(text, pos, bgColor, onClick)
+    local b = Instance.new("TextButton")
+    b.Size = UDim2.new(0, 150, 0, 32)
+    b.Position = pos
+    b.BackgroundColor3 = bgColor
+    b.Text = text
+    b.TextColor3 = Color3.fromRGB(255, 255, 255)
+    b.Font = Enum.Font.SourceSansBold
+    b.BorderSizePixel = 0
+    b.Parent = MainFrame
+    b.MouseButton1Click:Connect(onClick)
+    return b
+end
+
+local ToggleBtn, AutoBtn
+
+ToggleBtn = createMenuButton("🎯 準星狀態：開啟", UDim2.new(0, 10, 0, 45), Color3.fromRGB(155, 38, 182), function()
+    Cfg.crossEnabled = not Cfg.crossEnabled
+    CrossBase.Visible = Cfg.crossEnabled
+    ToggleBtn.BackgroundColor3 = Cfg.crossEnabled and Color3.fromRGB(155, 38, 182) or Color3.fromRGB(50, 50, 60)
+    ToggleBtn.Text = Cfg.crossEnabled and "🎯 準星狀態：開啟" or "❌ 準星狀態：關閉"
+    saveConfig()
+end)
+
+-- 【徹底修復的自動載入按鈕點擊更新邏輯】
+AutoBtn = createMenuButton("🚀 自動載入：已關閉", UDim2.new(0, 10, 0, 85), Color3.fromRGB(70, 70, 80), function()
+    Cfg.autoExec = not Cfg.autoExec
+    if Cfg.autoExec then
+        AutoBtn.BackgroundColor3 = Color3.fromRGB(46, 139, 87) -- 綠色
+        AutoBtn.Text = "🚀 自動載入：已啟用"
+    else
+        AutoBtn.BackgroundColor3 = Color3.fromRGB(70, 70, 80) -- 灰色
+        AutoBtn.Text = "🚀 自動載入：已關閉"
+    end
+    saveConfig()
+end)
+
+createMenuButton("❌ 卸載關閉腳本", UDim2.new(0, 10, 0, 125), Color3.fromRGB(180, 40, 40), function()
+    CrosshairGui:Destroy()
+    PanelGui:Destroy()
+end)
+
+-- 文字標籤
+local txt = Instance.new("TextLabel")
+txt.Size, txt.Position, txt.BackgroundTransparency, txt.Text, txt.TextColor3, txt.Font, txt.TextSize, txt.Parent = UDim2.new(0, 160, 0, 20), UDim2.new(0, 175, 0, 42), 1, "🎯 狙擊黑線十字微調：", Color3.fromRGB(220, 220, 220), Enum.Font.SourceSansBold, 12, MainFrame
+
+local inf = Instance.new("TextLabel")
+inf.Size, inf.Position, inf.BackgroundTransparency, inf.Text, inf.TextColor3, inf.Font, inf.TextSize, inf.Parent = UDim2.new(1, -20, 0, 30), UDim2.new(0, 10, 0, 165), 1, "[N] 鍵隱藏/顯示此面板 | 設定已開啟自動儲存與載入", Color3.fromRGB(150, 150, 150), Enum.Font.SourceSans, 12, MainFrame
+
+-- 建立微調方向鈕
+local function createTuneBtn(text, pos, onClick)
+    local b = Instance.new("TextButton")
+    b.Size = UDim2.new(0, 34, 0, 30)
+    b.Position = pos
+    b.BackgroundColor3 = Color3.fromRGB(45, 45, 55)
+    b.Text = text
+    b.TextColor3 = Color3.fromRGB(255, 255, 255)
+    b.Font = Enum.Font.SourceSansBold
+    b.BorderSizePixel = 0
+    b.Parent = MainFrame
+    b.MouseButton1Click:Connect(function()
+        onClick()
+        updateCrosshairPosition()
+        saveConfig()
+    end)
+end
+
+createTuneBtn("X -", UDim2.new(0, 175, 0, 65), function() Cfg.offsetX = Cfg.offsetX - 1 end)
+createTuneBtn("X +", UDim2.new(0, 212, 0, 65), function() Cfg.offsetX = Cfg.offsetX + 1 end)
+createTuneBtn("Y -", UDim2.new(0, 257, 0, 65), function() Cfg.offsetY = Cfg.offsetY - 1 end)
+createTuneBtn("Y +", UDim2.new(0, 294, 0, 65), function() Cfg.offsetY = Cfg.offsetY + 1 end)
+
+-- 初始化讀取歷史設定後的按鈕外觀狀態同步
+if Cfg.autoExec then
+    AutoBtn.BackgroundColor3 = Color3.fromRGB(46, 139, 87)
+    AutoBtn.Text = "🚀 自動載入：已啟用"
+end
+if not Cfg.crossEnabled then
+    ToggleBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
+    ToggleBtn.Text = "❌ 準星狀態：關閉"
+end
+
+-- 3. 核心功能驅動 (自轉、彩虹、全域拖曳、N鍵開關)
+local panelVisible, baseAngle = true, 45
+local isDragging, dragMStart, dragPStart = false, Vector2.new(), UDim2.new()
+
+TitleBar.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        isDragging = true
+        dragMStart = UserInputService:GetMouseLocation()
+        dragPStart = MainFrame.Position
+    end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        isDragging = false
+    end
+end)
+
+UserInputService.InputBegan:Connect(function(input, processed)
+    if processed then return end
+    if input.KeyCode == Enum.KeyCode.N then
+        panelVisible = not panelVisible
+        MainFrame.Visible = panelVisible
+    end
+end)
+
+RunService.RenderStepped:Connect(function(deltaTime)
+    -- 全域絕對座標強制映射拖曳移動 (徹底打破戰鬥狀態鎖定)
+    if isDragging then
+        local currentMouse = UserInputService:GetMouseLocation()
+        MainFrame.Position = UDim2.new(
+            dragPStart.X.Scale, dragPStart.X.Offset + (currentMouse.X - dragMStart.X),
+            dragPStart.Y.Scale, dragPStart.Y.Offset + (currentMouse.Y - dragMStart.Y)
+        )
+    end
+    -- 準星與文字同步彩虹自轉驅動
+    if Cfg.crossEnabled then
+        baseAngle = baseAngle + (deltaTime * 85)
+        RotPart.Rotation = baseAngle
+        local col = Color3.fromHSV((tick() % 3.5) / 3.5, 1, 1)
+        for _, l in ipairs(lines) do l.BackgroundColor3 = col end
+        UnderText.TextColor3 = col
+    end
+end)
+
+-- 執行初始化對齊
+updateCrosshairPosition()
+print("[+] 高級自動持久記憶載入版布署成功。")
